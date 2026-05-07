@@ -13,6 +13,7 @@ started_dir="${ENCLAVA_STARTED_DIR:-/run/enclava/containers}"
 ready_file="${ENCLAVA_INIT_READY_FILE:-/run/enclava/init-ready}"
 
 mkdir -p "$started_dir"
+chmod 1777 "$started_dir" 2>/dev/null || true
 printf '%s\n' "$$" > "$started_dir/$name"
 
 while [ ! -e "$ready_file" ]; do
