@@ -17,9 +17,11 @@ enclava create --image "$IMAGE" --signer-subject "$SIGNER_SUBJECT"
 enclava deploy --image "$IMAGE"
 ```
 
-The image contains `/usr/local/bin/app` because CAP starts application
-containers through `enclava-wait-exec` and then executes that path after
-confidential storage has been prepared.
+The image contains `/usr/local/bin/enclava-wait-exec`, because stateful CAP
+deployments start the application container immediately and the helper waits
+until confidential storage has been prepared before it execs the workload. The
+image also contains `/usr/local/bin/app`, which CAP uses as the default
+workload command when no explicit command is supplied.
 
 The GHCR package must be publicly readable before deployment. CAP's policy
 generation preflight resolves the image manifest from the digest-pinned

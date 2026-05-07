@@ -40,7 +40,8 @@ RUN groupadd --gid 10001 nutshell \
     && useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home nutshell \
     && mkdir -p /data /data/tmp /state/app \
     && chown -R 10001:10001 /data /state \
-    && install -m 0755 docker/app-entrypoint.sh /usr/local/bin/app
+    && install -m 0755 docker/app-entrypoint.sh /usr/local/bin/app \
+    && install -m 0755 docker/enclava-wait-exec /usr/local/bin/enclava-wait-exec
 
 VOLUME ["/data"]
 EXPOSE 3338

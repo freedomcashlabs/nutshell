@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+name="${ENCLAVA_CONTAINER_NAME:-unknown}"
+case "$name" in
+  ""|"."|".."|*/*)
+    echo "enclava-wait-exec: ENCLAVA_CONTAINER_NAME must be a single path component" >&2
+    exit 127
+    ;;
+esac
+
+started_dir="${ENCLAVA_STARTED_DIR:-/run/enclava/containers}"
+ready_file="${ENCLAVA_INIT_READY_FILE:-/run/enclava/init-ready}"
+
+mkdir -p "$started_dir"
+: > "$started_dir/$name"
+
+while [ ! -e "$ready_file" ]; do
+  sleep 1
+done
+
+if [ "$#" -eq 0 ]; then
+  set -- /startup/startup.sh
+fi
+
+exec "$@"
