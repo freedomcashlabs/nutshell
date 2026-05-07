@@ -33,6 +33,15 @@ def _build_router_app() -> FastAPI:
     return app
 
 
+def test_health_endpoint():
+    client = TestClient(app_module.app)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def _dummy_keyset(keyset_id: str, active: bool = True):
     return SimpleNamespace(
         id=keyset_id,

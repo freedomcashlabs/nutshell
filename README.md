@@ -201,12 +201,22 @@ This command runs the mint on your local computer. Skip this step if you want to
 Run the mint using the pre-built Docker image. This method sets environment variables directly and works reliably regardless of local `.env` files:
 
 ```bash
-docker run -d -p 3338:3338 --name nutshell -e MINT_BACKEND_BOLT11_SAT=FakeWallet -e MINT_LISTEN_HOST=0.0.0.0 -e MINT_LISTEN_PORT=3338 -e MINT_PRIVATE_KEY=TEST_PRIVATE_KEY cashubtc/nutshell:0.20.0 poetry run mint
+docker run -d -p 3338:3338 --name nutshell -e MINT_BACKEND_BOLT11_SAT=FakeWallet -e MINT_PRIVATE_KEY=TEST_PRIVATE_KEY ghcr.io/freedomcashlabs/nutshell:0.20.0
 ```
 
 ## From this repository
 
 Before you can run your own mint, make sure to enable a Lightning backend in `MINT_BACKEND_BOLT11_SAT` and set `MINT_PRIVATE_KEY` in your `.env` file.
+
+### CAP deployment
+
+The container image is prepared for CAP/Kata deployments:
+
+- It runs as UID/GID `10001` and stores mint state under `/data`.
+- It exposes the mint on `0.0.0.0:3338` and serves CAP probes at `/health`.
+- It provides `/usr/local/bin/app`, which CAP's generated startup script can execute.
+- It defaults to `MINT_BACKEND_BOLT11_SAT=FakeWallet` for this first CAP proof-of-concept deployment.
+- If `MINT_PRIVATE_KEY` is not set, the entrypoint derives it with a one-way HMAC-SHA256 from `APP_SEED_PATH` (default `/state/app/seed`). The dev-only fallback seed is disabled unless `NUTSHELL_ALLOW_DEV_SEED=1` is set.
 
 ```bash
 poetry run mint

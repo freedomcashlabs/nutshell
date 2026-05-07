@@ -79,6 +79,11 @@ app = create_app()
 add_middlewares(app)
 
 
+@app.get("/health", include_in_schema=False)
+async def health():
+    return {"status": "ok"}
+
+
 @app.middleware("http")
 async def catch_exceptions(request: Request, call_next):
     CORS_HEADERS = {
