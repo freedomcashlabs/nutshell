@@ -69,7 +69,6 @@ RUN groupadd --gid 10001 nutshell \
     && chmod 0755 /usr/local/bin/app /usr/local/bin/enclava-wait-exec \
     && chown -R 10001:10001 /data /state
 
-VOLUME ["/data"]
 EXPOSE 3338
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/app"]

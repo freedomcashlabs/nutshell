@@ -23,6 +23,11 @@ until confidential storage has been prepared before it execs the workload. The
 image also contains `/usr/local/bin/app`, which CAP uses as the default
 workload command when no explicit command is supplied.
 
+Do not declare Docker `VOLUME` entries for CAP state paths such as `/data`.
+CAP mounts those paths from encrypted state volumes. Docker image volumes cause
+containerd to create anonymous per-container host paths, which Kata may treat
+as direct-assigned volumes instead of the CAP state mount.
+
 The GHCR package must be publicly readable before deployment. CAP's policy
 generation preflight resolves the image manifest from the digest-pinned
 reference, and unauthenticated users must be able to perform the same lookup
