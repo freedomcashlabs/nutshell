@@ -37,6 +37,7 @@ FROM python:3.10-slim AS runtime
 ENV APP_SEED_PATH=/state/app/seed \
     CASHU_DIR=/state/data \
     HOME=/state/data \
+    MINT_AUTH_DATABASE=/state/data/mint \
     MINT_BACKEND_BOLT11_SAT=FakeWallet \
     MINT_DATABASE=/state/data/mint \
     MINT_LISTEN_HOST=0.0.0.0 \

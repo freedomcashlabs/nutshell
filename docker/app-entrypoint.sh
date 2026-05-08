@@ -4,10 +4,10 @@ set -eu
 : "${APP_SEED_PATH:=/state/app/seed}"
 : "${MINT_LISTEN_HOST:=0.0.0.0}"
 : "${MINT_LISTEN_PORT:=3338}"
-: "${MINT_DATABASE:=/data/mint}"
-: "${MINT_AUTH_DATABASE:=/data/mint}"
+: "${MINT_DATABASE:=/state/data/mint}"
+: "${MINT_AUTH_DATABASE:=/state/data/mint}"
 : "${MINT_BACKEND_BOLT11_SAT:=FakeWallet}"
-: "${TMPDIR:=/data/tmp}"
+: "${TMPDIR:=/state/data/tmp}"
 
 export APP_SEED_PATH
 export MINT_LISTEN_HOST
