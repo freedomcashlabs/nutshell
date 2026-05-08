@@ -17,6 +17,10 @@ enclava create --image "$IMAGE" --signer-subject "$SIGNER_SUBJECT"
 enclava deploy --image "$IMAGE"
 ```
 
+The first CAP deployment uses password mode so the owner can claim encrypted
+storage inside the TEE. After the first deploy is healthy, enable restart
+autounlock with `enclava auto-unlock enable`.
+
 The image contains `/usr/local/bin/enclava-wait-exec`, because stateful CAP
 deployments start the application container immediately and the helper waits
 until confidential storage has been prepared before it execs the workload. The
