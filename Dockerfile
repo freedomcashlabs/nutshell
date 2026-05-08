@@ -35,17 +35,17 @@ RUN poetry config virtualenvs.create false \
 FROM python:3.10-slim AS runtime
 
 ENV APP_SEED_PATH=/state/app/seed \
-    CASHU_DIR=/data \
-    HOME=/data \
+    CASHU_DIR=/state/data \
+    HOME=/state/data \
     MINT_BACKEND_BOLT11_SAT=FakeWallet \
-    MINT_DATABASE=/data/mint \
+    MINT_DATABASE=/state/data/mint \
     MINT_LISTEN_HOST=0.0.0.0 \
     MINT_LISTEN_PORT=3338 \
     PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TMPDIR=/data/tmp \
-    XDG_CACHE_HOME=/data/.cache
+    TMPDIR=/state/data/tmp \
+    XDG_CACHE_HOME=/state/data/.cache
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -64,10 +64,10 @@ COPY docker/app-entrypoint.sh /usr/local/bin/app
 COPY docker/enclava-wait-exec /usr/local/bin/enclava-wait-exec
 
 RUN groupadd --gid 10001 nutshell \
-    && useradd --uid 10001 --gid 10001 --home-dir /data --no-create-home nutshell \
-    && mkdir -p /data /data/tmp /state/app \
+    && useradd --uid 10001 --gid 10001 --home-dir /state/data --no-create-home nutshell \
+    && mkdir -p /state/app /state/data /state/data/tmp \
     && chmod 0755 /usr/local/bin/app /usr/local/bin/enclava-wait-exec \
-    && chown -R 10001:10001 /data /state
+    && chown -R 10001:10001 /state
 
 EXPOSE 3338
 USER 10001:10001

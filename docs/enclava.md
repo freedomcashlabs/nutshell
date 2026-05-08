@@ -27,10 +27,10 @@ until confidential storage has been prepared before it execs the workload. The
 image also contains `/usr/local/bin/app`; `enclava.toml` pins that argv in the
 customer-signed deployment descriptor.
 
-Do not declare Docker `VOLUME` entries for CAP state paths such as `/data`.
-CAP mounts those paths from encrypted state volumes. Docker image volumes cause
-containerd to create anonymous per-container host paths, which Kata may treat
-as direct-assigned volumes instead of the CAP state mount.
+Do not declare Docker `VOLUME` entries for CAP state paths such as `/state`.
+CAP exposes decrypted state under `/state` inside the TEE. Docker image volumes
+cause containerd to create anonymous per-container host paths, which Kata may
+treat as direct-assigned volumes instead of the CAP state mount.
 
 The GHCR package must be publicly readable before deployment. CAP's policy
 generation preflight resolves the image manifest from the digest-pinned

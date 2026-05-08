@@ -212,7 +212,7 @@ Before you can run your own mint, make sure to enable a Lightning backend in `MI
 
 The container image is prepared for CAP/Kata deployments:
 
-- It runs as UID/GID `10001` and stores mint state under `/data`.
+- It runs as UID/GID `10001` and stores mint state under `/state/data`.
 - It exposes the mint on `0.0.0.0:3338` and serves CAP probes at `/health`.
 - It provides `/usr/local/bin/app`, which `enclava.toml` pins as the signed CAP workload command.
 - It defaults to `MINT_BACKEND_BOLT11_SAT=FakeWallet` for this first CAP proof-of-concept deployment.
