@@ -24,8 +24,8 @@ autounlock with `enclava auto-unlock enable`.
 The image contains `/usr/local/bin/enclava-wait-exec`, because stateful CAP
 deployments start the application container immediately and the helper waits
 until confidential storage has been prepared before it execs the workload. The
-image also contains `/usr/local/bin/app`, which CAP uses as the default
-workload command when no explicit command is supplied.
+image also contains `/usr/local/bin/app`; `enclava.toml` pins that argv in the
+customer-signed deployment descriptor.
 
 Do not declare Docker `VOLUME` entries for CAP state paths such as `/data`.
 CAP mounts those paths from encrypted state volumes. Docker image volumes cause

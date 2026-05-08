@@ -1,6 +1,7 @@
 [app]
 name = "nutshell"
 port = 3338
+command = ["/usr/local/bin/app"]
 
 [storage]
 paths = ["/data"]

@@ -214,7 +214,7 @@ The container image is prepared for CAP/Kata deployments:
 
 - It runs as UID/GID `10001` and stores mint state under `/data`.
 - It exposes the mint on `0.0.0.0:3338` and serves CAP probes at `/health`.
-- It provides `/usr/local/bin/app`, which CAP's generated startup script can execute.
+- It provides `/usr/local/bin/app`, which `enclava.toml` pins as the signed CAP workload command.
 - It defaults to `MINT_BACKEND_BOLT11_SAT=FakeWallet` for this first CAP proof-of-concept deployment.
 - If `MINT_PRIVATE_KEY` is not set, the entrypoint derives it with a one-way HMAC-SHA256 from `APP_SEED_PATH` (default `/state/app/seed`). The dev-only fallback seed is disabled unless `NUTSHELL_ALLOW_DEV_SEED=1` is set.
 
