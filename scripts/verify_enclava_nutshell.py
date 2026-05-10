@@ -8,16 +8,20 @@ package can be downloaded and run without creating a virtualenv.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
+import os
 import socket
 import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 PROOF_PATH = "/.well-known/enclava/proof"
 TEE_STATUS_PATH = "/.well-known/confidential/status"
@@ -106,6 +110,14 @@ def load_package(path: str | None) -> dict[str, Any] | None:
     return json.loads(Path(path).read_text())
 
 
+def load_json_resource(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    if value.startswith(("http://", "https://")):
+        return json.loads(http_get(value, verify_tls=True).decode())
+    return json.loads(Path(value).read_text())
+
+
 def nested(data: dict[str, Any], *keys: str) -> Any:
     current: Any = data
     for key in keys:
@@ -128,6 +140,211 @@ def derive_tee_status_url(base_url: str) -> str | None:
         return None
     port = f":{parsed.port}" if parsed.port else ""
     return f"{parsed.scheme}://{tee_host}{port}{TEE_STATUS_PATH}"
+
+
+def ce_v1_hash(records: list[tuple[str, bytes]]) -> bytes:
+    payload = bytearray()
+    for label, value in records:
+        label_bytes = label.encode()
+        payload.extend(len(label_bytes).to_bytes(2, "big"))
+        payload.extend(label_bytes)
+        payload.extend(len(value).to_bytes(4, "big"))
+        payload.extend(value)
+    return hashlib.sha256(payload).digest()
+
+
+def spki_sha256_for_host(base_url: str, *, verify_tls: bool) -> str:
+    parsed = urlparse(base_url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("SPKI verification requires an https URL with a host")
+    port = parsed.port or 443
+    context = ssl.create_default_context() if verify_tls else ssl._create_unverified_context()
+    with socket.create_connection((parsed.hostname, port), timeout=10) as sock:
+        with context.wrap_socket(sock, server_hostname=parsed.hostname) as tls:
+            der_cert = tls.getpeercert(binary_form=True)
+    cert = ssl.DER_cert_to_PEM_cert(der_cert).encode()
+    pubkey = subprocess.check_output(["openssl", "x509", "-pubkey", "-noout"], input=cert)
+    spki_der = subprocess.check_output(["openssl", "pkey", "-pubin", "-outform", "DER"], input=pubkey)
+    return hashlib.sha256(spki_der).hexdigest()
+
+
+def verify_fresh_attestation(base_url: str, manifest: dict[str, Any] | None) -> list[Check]:
+    checks: list[Check] = []
+    public_host = urlparse(base_url).hostname or ""
+    attestation_url = nested(manifest or {}, "deployment", "attestation_url") or f"{base_url}/v1/attestation"
+    tee_status_url = nested(manifest or {}, "deployment", "tee_status_url") or derive_tee_status_url(base_url)
+    expected_spki = nested(manifest or {}, "expected_runtime", "attestation_proxy_tls_leaf_spki_sha256")
+    if not expected_spki:
+        if not tee_status_url:
+            return [warn("Fresh attestation skipped", "No TEE status URL or expected TEE TLS SPKI was available.")]
+        tee_base = tee_status_url.removesuffix(TEE_STATUS_PATH)
+        try:
+            expected_spki = spki_sha256_for_host(tee_base, verify_tls=False)
+        except Exception as exc:
+            return [fail("Could not calculate TEE TLS SPKI", str(exc))]
+
+    nonce = os.urandom(32)
+    nonce_b64 = base64.b64encode(nonce).decode()
+    query = urlencode(
+        {
+            "nonce": nonce_b64,
+            "domain": public_host,
+            "leaf_spki_sha256": expected_spki,
+        }
+    )
+    try:
+        receipt = json_get(f"{attestation_url}?{query}", verify_tls=True, timeout=30)
+    except Exception as exc:
+        return [fail("Fresh attestation request failed", str(exc))]
+
+    attestation_type = receipt.get("attestation_type")
+    checks.append(
+        ok("Attestation profile is SEV-SNP", attestation_type)
+        if attestation_type == "coco-sev-snp"
+        else fail("Unexpected attestation profile", str(attestation_type))
+    )
+    checks.append(
+        ok("Nonce is echoed by attestation response", nonce_b64)
+        if receipt.get("nonce") == nonce_b64
+        else fail("Nonce mismatch", f"sent={nonce_b64} received={receipt.get('nonce')}")
+    )
+
+    binding = receipt.get("runtime_data_binding") or {}
+    checks.append(
+        ok("Attestation is bound to the public domain", public_host)
+        if binding.get("domain") == public_host
+        else fail("Attestation domain mismatch", str(binding.get("domain")))
+    )
+    checks.append(
+        ok("Attestation is bound to the TEE TLS leaf key", expected_spki)
+        if binding.get("leaf_spki_sha256") == expected_spki
+        else fail("TEE TLS SPKI mismatch", str(binding.get("leaf_spki_sha256")))
+    )
+
+    claims = receipt.get("claims") or {}
+    checks.append(
+        ok("TEE claim says sev-snp", str(nested(claims, "tee")))
+        if nested(claims, "tee") == "sev-snp"
+        else fail("TEE claim was not sev-snp", str(nested(claims, "tee")))
+    )
+    measurement = claims.get("measurement")
+    checks.append(
+        ok("TEE measurement is present", str(measurement))
+        if isinstance(measurement, str) and len(measurement) == 96
+        else fail("TEE measurement missing or malformed", str(measurement))
+    )
+    claims_meta = receipt.get("claims_meta") or {}
+    checks.append(
+        ok("AA token measurement matches evidence", "true")
+        if claims_meta.get("aa_token_measurement_matches_evidence") is True
+        else fail("AA token measurement did not match evidence", json.dumps(claims_meta, sort_keys=True))
+    )
+
+    report_data = nested(receipt, "evidence", "json", "attestation_report", "report_data")
+    receipt_pubkey_hash = binding.get("receipt_pubkey_sha256")
+    if isinstance(report_data, list) and isinstance(receipt_pubkey_hash, str):
+        try:
+            report_data_text = bytes(report_data).decode()
+            transcript_hash = ce_v1_hash(
+                [
+                    ("purpose", b"enclava-tee-tls-v1"),
+                    ("domain", public_host.encode()),
+                    ("nonce", nonce),
+                    ("leaf_spki_sha256", bytes.fromhex(expected_spki)),
+                ]
+            )
+            expected_binding = ce_v1_hash(
+                [
+                    ("purpose", b"enclava-tee-report-data-v1"),
+                    ("transcript_hash", transcript_hash),
+                    ("receipt_pubkey_sha256", bytes.fromhex(receipt_pubkey_hash)),
+                ]
+            ).hex()
+            checks.append(
+                ok("SNP REPORT_DATA binds nonce, domain, TLS key, and receipt key", expected_binding)
+                if report_data_text == expected_binding
+                else fail("SNP REPORT_DATA binding mismatch", f"report={report_data_text} expected={expected_binding}")
+            )
+        except Exception as exc:
+            checks.append(fail("Could not verify SNP REPORT_DATA binding", str(exc)))
+    else:
+        checks.append(fail("SNP REPORT_DATA missing", "attestation report did not expose report_data"))
+
+    verdict = nested(receipt, "server_verification", "verdict")
+    if verdict == "verified":
+        checks.append(ok("Server-side attestation policy verdict", verdict))
+    elif verdict == "inconclusive":
+        checks.append(
+            warn(
+                "Server-side attestation policy verdict is inconclusive",
+                "Fresh SNP evidence and REPORT_DATA binding verified; image digest claim is not exposed by AA token.",
+            )
+        )
+    else:
+        checks.append(fail("Server-side attestation policy verdict", str(verdict)))
+    return checks
+
+
+def normalize_image_ref(value: str) -> str:
+    return value.replace(":24h@", "@")
+
+
+def compare_manifest_to_live(manifest: dict[str, Any] | None, live_kubernetes: bool) -> list[Check]:
+    if not manifest:
+        return [warn("No deployment manifest supplied", "Run with --deployment-manifest-url for live-image comparison.")]
+    checks: list[Check] = []
+    if not live_kubernetes:
+        return [warn("Live Kubernetes comparison skipped", "Run with --live-kubernetes to compare the published manifest to the running pod.")]
+
+    namespace = nested(manifest, "deployment", "namespace")
+    pod = nested(manifest, "deployment", "pod")
+    if not namespace or not pod:
+        return [fail("Deployment manifest missing namespace/pod", json.dumps(nested(manifest, "deployment") or {}))]
+    try:
+        pod_json = subprocess.check_output(
+            ["ssh", "control1.encl", f"kubectl -n {namespace} get pod {pod} -o json"],
+            text=True,
+            timeout=30,
+        )
+        live = json.loads(pod_json)
+    except Exception as exc:
+        return [fail("Could not inspect live Kubernetes pod", str(exc))]
+
+    expected = manifest.get("containers") or {}
+    live_spec = {item["name"]: item.get("image") for item in nested(live, "spec", "containers") or []}
+    live_status = {
+        item["name"]: {
+            "ready": item.get("ready"),
+            "imageID": item.get("imageID"),
+        }
+        for item in nested(live, "status", "containerStatuses") or []
+    }
+    for name, spec in expected.items():
+        expected_image = spec.get("image")
+        expected_image_id = spec.get("image_id", expected_image)
+        actual_image = live_spec.get(name)
+        actual_image_id = (live_status.get(name) or {}).get("imageID")
+        ready = (live_status.get(name) or {}).get("ready")
+        checks.append(
+            ok(f"Live container {name} image matches manifest", actual_image or "")
+            if actual_image == expected_image
+            else fail(f"Live container {name} image mismatch", f"live={actual_image} manifest={expected_image}")
+        )
+        if expected_image_id and actual_image_id:
+            checks.append(
+                ok(f"Live container {name} imageID matches manifest", actual_image_id)
+                if normalize_image_ref(actual_image_id) == normalize_image_ref(expected_image_id)
+                else fail(
+                    f"Live container {name} imageID mismatch",
+                    f"live={actual_image_id} manifest={expected_image_id}",
+                )
+            )
+        checks.append(
+            ok(f"Live container {name} is ready", "true")
+            if ready is True
+            else fail(f"Live container {name} is not ready", str(ready))
+        )
+    return checks
 
 
 def compare_package(proof: dict[str, Any], package: dict[str, Any] | None) -> list[Check]:
@@ -174,7 +391,13 @@ def compare_package(proof: dict[str, Any], package: dict[str, Any] | None) -> li
     return checks
 
 
-def verify(base_url: str, package: dict[str, Any] | None, tee_status_url: str | None) -> int:
+def verify(
+    base_url: str,
+    package: dict[str, Any] | None,
+    tee_status_url: str | None,
+    deployment_manifest: dict[str, Any] | None,
+    live_kubernetes: bool,
+) -> int:
     failures = 0
 
     print_header("1. Public HTTPS")
@@ -192,6 +415,39 @@ def verify(base_url: str, package: dict[str, Any] | None, tee_status_url: str | 
         print_check(ok("Public app responded over verified HTTPS", f"HTTP {exc.code}"))
     except Exception as exc:
         print_check(fail("Public app fetch failed", str(exc)))
+        failures += 1
+
+    try:
+        mint_info = json_get(f"{base_url}/v1/info", verify_tls=True, timeout=20)
+        version = mint_info.get("version")
+        name = mint_info.get("name")
+        pubkey = mint_info.get("pubkey")
+        expected_version = nested(deployment_manifest or {}, "containers", "web", "expected_service_version")
+        print_check(
+            ok("Nutshell /v1/info returned mint identity", f"{name} {version}, pubkey={pubkey}")
+            if name and version and pubkey
+            else fail("Nutshell /v1/info did not include mint identity", json.dumps(mint_info, sort_keys=True))
+        )
+        if expected_version:
+            print_check(
+                ok("Nutshell version matches published manifest", version)
+                if version == expected_version
+                else fail("Nutshell version mismatch", f"endpoint={version} manifest={expected_version}")
+            )
+    except Exception as exc:
+        print_check(fail("Nutshell /v1/info failed", str(exc)))
+        failures += 1
+
+    try:
+        keys = json_get(f"{base_url}/v1/keys", verify_tls=True, timeout=20)
+        keysets = keys.get("keysets") or []
+        print_check(
+            ok("Nutshell /v1/keys returned active keyset", f"keysets={len(keysets)}")
+            if keysets and keysets[0].get("active") is True
+            else fail("Nutshell /v1/keys did not return an active keyset", json.dumps(keys, sort_keys=True))
+        )
+    except Exception as exc:
+        print_check(fail("Nutshell /v1/keys failed", str(exc)))
         failures += 1
 
     print_header("2. Nutshell Proof Endpoint")
@@ -217,7 +473,12 @@ def verify(base_url: str, package: dict[str, Any] | None, tee_status_url: str | 
             failures += 1
 
     print_header("3. Enclava TEE Status")
-    status_url = tee_status_url or nested(proof, "runtime", "tee_status_url") or derive_tee_status_url(base_url)
+    status_url = (
+        tee_status_url
+        or nested(deployment_manifest or {}, "deployment", "tee_status_url")
+        or nested(proof, "runtime", "tee_status_url")
+        or derive_tee_status_url(base_url)
+    )
     if not status_url:
         print_check(warn("TEE status URL unavailable", "Pass --tee-status-url for non-Enclava hostnames."))
     else:
@@ -261,9 +522,21 @@ def verify(base_url: str, package: dict[str, Any] | None, tee_status_url: str | 
             print_check(fail("Failed to fetch TEE status", f"{status_url}: {exc}"))
             failures += 1
 
+    print_header("4. Fresh TEE Attestation")
+    for check in verify_fresh_attestation(base_url, deployment_manifest):
+        print_check(check)
+        if not check.ok and not check.warning:
+            failures += 1
+
+    print_header("5. Published Manifest vs Live Pod")
+    for check in compare_manifest_to_live(deployment_manifest, live_kubernetes):
+        print_check(check)
+        if not check.ok and not check.warning:
+            failures += 1
+
     print_header("Result")
     if failures == 0:
-        print_check(ok("Verification completed", "Public TLS, proof endpoint, and available TEE status checks passed."))
+        print_check(ok("Verification completed", "Public TLS, proof endpoint, TEE status, fresh attestation, and enabled manifest checks passed."))
         return 0
     print_check(fail("Verification failed", f"{failures} critical check(s) failed."))
     return 1
@@ -273,12 +546,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify an Enclava-hosted Nutshell mint.")
     parser.add_argument("mint_url", help="Mint URL, for example https://mint.example.enclava.dev")
     parser.add_argument("--package-file", help="Path to enclava-proof-package.json")
+    parser.add_argument("--deployment-manifest-url", help="Local path or HTTPS URL for a published deployment manifest")
+    parser.add_argument("--live-kubernetes", action="store_true", help="Compare the deployment manifest to the live Kubernetes pod via ssh control1.encl")
     parser.add_argument("--tee-status-url", help="Override the TEE status URL")
     args = parser.parse_args()
     return verify(
         normalize_base_url(args.mint_url),
         load_package(args.package_file),
         args.tee_status_url,
+        load_json_resource(args.deployment_manifest_url),
+        args.live_kubernetes,
     )
 
 

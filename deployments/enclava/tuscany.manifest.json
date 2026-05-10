@@ -1,0 +1,48 @@
+{
+  "schema_version": "enclava.nutshell.deployment-manifest.v1",
+  "deployment": {
+    "org": "freedomcash",
+    "app": "tuscany",
+    "namespace": "cap-freedomcash-tuscany",
+    "pod": "tuscany-0",
+    "public_url": "https://tuscany.e9cae29e.enclava.dev",
+    "tee_status_url": "https://tuscany.e9cae29e.tee.enclava.dev/.well-known/confidential/status",
+    "attestation_url": "https://tuscany.e9cae29e.enclava.dev/v1/attestation",
+    "attestation_info_url": "https://tuscany.e9cae29e.enclava.dev/v1/attestation/info"
+  },
+  "expected_runtime": {
+    "tee": "sev-snp",
+    "runtime_class": "kata-qemu-snp",
+    "confidential_state": "unlocked",
+    "claims_verified": true,
+    "ciphertext_backend": "kbs-resource",
+    "attestation_proxy_tls_leaf_spki_sha256": "1a837a31c51dfb88cc8774cd5edb3ff3e17b8e49c1a4c67e564777c8cda1cb31",
+    "report_data_scheme": "enclava-report-data-v1"
+  },
+  "containers": {
+    "web": {
+      "image": "ghcr.io/freedomcashlabs/nutshell@sha256:558e7fad3f30d57dc860349a0fca3ecc84ebe12306827820220d2979fa5ac063",
+      "source_repository": "freedomcashlabs/nutshell",
+      "source_commit": "4a93bc160074741746f9624fca4506c210a8474a",
+      "expected_service_version": "Nutshell/0.20.0"
+    },
+    "attestation-proxy": {
+      "image": "ghcr.io/enclava-ai/attestation-proxy@sha256:fc0911c45a271077f96b4e346493fb2091b0f8fef19f72a69f51f9abf99a18ad",
+      "source_repository": "enclava-ai/attestation-proxy",
+      "source_commit": "ed265175a0172d9fac0c9ce9da0c27b357522d88"
+    },
+    "tenant-ingress": {
+      "image": "ghcr.io/enclava-ai/caddy-ingress@sha256:4259434d3d0559fb2085e94da6f0e60ce0f9c0291199cde65f91046e75edad14"
+    },
+    "enclava-init": {
+      "image": "ttl.sh/enclava-tuscany-init-bindfd-20260510-184459:24h",
+      "image_id": "ttl.sh/enclava-tuscany-init-bindfd-20260510-184459@sha256:73d8521a3d5ccb7492455512c098e03aed1f400825b32c4091b901a1d10cb004",
+      "verification_note": "Temporary demo image. This manifest records the expected live image ID so the verifier can compare it against Kubernetes, but ttl.sh is not durable provenance."
+    }
+  },
+  "known_demo_limitations": [
+    "The live Tuscany ConfigMap removes the app-data bind mount stanza to avoid the current Kata namespace bind EINVAL issue. Owner seed, TEE status, attestation, public TLS, and Nutshell service checks remain active.",
+    "The enclava-init image is hosted on ttl.sh for the demo and must be replaced with a durable GHCR digest before production use."
+  ],
+  "created_at": "2026-05-10T18:57:17Z"
+}
