@@ -76,6 +76,14 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.get_tags.outputs.version_tag }}
             ${{ env.IMAGE_NAME }}:${{ steps.get_tags.outputs.latest_tag }}
+          build-args: |
+            NUTSHELL_BUILD_GIT_SHA=${{ github.sha }}
+            NUTSHELL_BUILD_GIT_REF=${{ github.ref_name }}
+            NUTSHELL_BUILD_GITHUB_REPOSITORY=${{ github.repository }}
+            NUTSHELL_BUILD_GITHUB_WORKFLOW=${{ github.workflow }}
+            NUTSHELL_BUILD_GITHUB_RUN_ID=${{ github.run_id }}
+            NUTSHELL_BUILD_GITHUB_RUN_ATTEMPT=${{ github.run_attempt }}
+            NUTSHELL_IMAGE_REF=${{ env.IMAGE_NAME }}:${{ steps.get_tags.outputs.version_tag }}
           platforms: linux/amd64
           provenance: false
           sbom: false
@@ -93,3 +101,63 @@ jobs:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+      - name: Create Enclava proof package
+        if: steps.build.outputs.digest != ''
+        run: |
+          mkdir -p dist/enclava-proof-package
+          cp scripts/verify_enclava_nutshell.py dist/enclava-proof-package/
+          chmod +x dist/enclava-proof-package/verify_enclava_nutshell.py
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          image_name = os.environ["IMAGE_NAME"]
+          digest = "${{ steps.build.outputs.digest }}"
+          version_tag = "${{ steps.get_tags.outputs.version_tag }}"
+          repo = "${{ github.repository }}"
+          workflow_ref = f"https://github.com/{repo}/.github/workflows/docker.yaml@${{ github.ref }}"
+          run_url = f"https://github.com/{repo}/actions/runs/${{ github.run_id }}"
+          package = {
+              "schema_version": "enclava.nutshell.proof-package.v1",
+              "service": "nutshell",
+              "image": {
+                  "name": image_name,
+                  "tag": version_tag,
+                  "digest": digest,
+                  "reference": f"{image_name}@{digest}",
+                  "tag_reference": f"{image_name}:{version_tag}",
+              },
+              "source": {
+                  "repository": repo,
+                  "commit": "${{ github.sha }}",
+                  "ref": "${{ github.ref }}",
+                  "workflow": "${{ github.workflow }}",
+                  "workflow_ref": workflow_ref,
+                  "run_url": run_url,
+              },
+              "verification": {
+                  "proof_endpoint": "/.well-known/enclava/proof",
+                  "attestation_info_endpoint": "/v1/attestation/info",
+                  "tee_status_path": "/.well-known/confidential/status",
+                  "expected_tls_issuer": "Let's Encrypt",
+                  "expected_cap_tls_mode": "dns01-broker",
+                  "signer_subject": workflow_ref,
+                  "command": (
+                      "python verify_enclava_nutshell.py "
+                      "https://<mint-host> --package-file enclava-proof-package.json"
+                  ),
+              },
+          }
+          Path("dist/enclava-proof-package/enclava-proof-package.json").write_text(
+              json.dumps(package, indent=2) + "\n"
+          )
+          PY
+
+      - name: Upload Enclava proof package
+        if: steps.build.outputs.digest != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: enclava-proof-package
+          path: dist/enclava-proof-package

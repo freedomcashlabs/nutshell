@@ -14,6 +14,7 @@ from ..core.errors import CashuError
 from ..core.logging import configure_logger
 from ..core.settings import settings
 from .auth.router import auth_router
+from .enclava_proof import router as enclava_proof_router
 from .router import redis, router
 from .router_deprecated import router_deprecated
 from .startup import (
@@ -128,6 +129,8 @@ if settings.debug_mint_only_deprecated:
 else:
     app.include_router(router=router, tags=["Mint"])
     app.include_router(router=router_deprecated, tags=["Deprecated"], deprecated=True)
+
+app.include_router(enclava_proof_router, tags=["Enclava"])
 
 if settings.mint_require_auth:
     app.include_router(auth_router, tags=["Auth"])

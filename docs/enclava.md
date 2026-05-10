@@ -43,3 +43,54 @@ At runtime, the entrypoint derives `MINT_PRIVATE_KEY` from the CAP-provided
 `APP_SEED_PATH` when `MINT_PRIVATE_KEY` is not explicitly set. The derived key
 is not printed. Local Docker smoke tests can use `NUTSHELL_ALLOW_DEV_SEED=1`;
 do not set that flag for CAP deployments.
+
+## Verifiable proof package
+
+The image exposes a public proof document at:
+
+```text
+/.well-known/enclava/proof
+```
+
+and a compatibility-style summary at:
+
+```text
+/v1/attestation/info
+```
+
+The proof document is intentionally small and safe to expose. It contains the
+Nutshell version, the baked GitHub build metadata, the image reference baked
+into the container, and the Enclava TEE status URL derived from the public
+hostname. It does not expose keys, seeds, invoices, database paths, or secrets.
+
+The Docker workflow uploads an `enclava-proof-package` artifact after a
+successful image build. The package contains:
+
+- `enclava-proof-package.json` — image digest, source commit, workflow URL, and
+  expected verification endpoints.
+- `verify_enclava_nutshell.py` — a dependency-free verifier that prints a
+  human-readable proof report.
+
+Example third-party verification:
+
+```sh
+python verify_enclava_nutshell.py \
+  https://<mint-host> \
+  --package-file enclava-proof-package.json
+```
+
+The verifier checks:
+
+1. The public mint URL serves over WebPKI-trusted HTTPS.
+2. The certificate subject/SAN matches the mint hostname and is issued by a
+   trusted CA such as production Let's Encrypt.
+3. The proof endpoint is reachable and reports the expected build/package
+   metadata.
+4. The Enclava TEE status endpoint reports `state=unlocked` and
+   `claims_verified=true`.
+
+When CAP exposes lower-level image digest claims in the TEE status document,
+the verifier also compares those claims against the proof package image digest.
+If the digest claim is not exposed, the verifier prints a warning and still
+shows the CAP claim-verification state so an operator can pair it with
+Kubernetes/CAP evidence.

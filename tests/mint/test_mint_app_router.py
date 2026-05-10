@@ -42,6 +42,56 @@ def test_health_endpoint():
     assert response.json() == {"status": "ok"}
 
 
+def test_enclava_proof_endpoint_reports_build_and_tee_urls(monkeypatch):
+    monkeypatch.setenv("NUTSHELL_BUILD_GIT_SHA", "abc123")
+    monkeypatch.setenv("NUTSHELL_BUILD_GITHUB_REPOSITORY", "freedomcashlabs/nutshell")
+    monkeypatch.setenv(
+        "NUTSHELL_IMAGE_REF",
+        "ghcr.io/freedomcashlabs/nutshell@sha256:" + "1" * 64,
+    )
+
+    client = TestClient(app_module.app)
+    response = client.get(
+        "/.well-known/enclava/proof",
+        headers={
+            "host": "mint.example.enclava.dev",
+            "x-forwarded-proto": "https",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "enclava.nutshell.proof.v1"
+    assert body["service"] == "nutshell"
+    assert body["build"]["git_sha"] == "abc123"
+    assert body["build"]["github_repository"] == "freedomcashlabs/nutshell"
+    assert body["runtime"]["proof_url"] == (
+        "https://mint.example.enclava.dev/.well-known/enclava/proof"
+    )
+    assert body["runtime"]["tee_status_url"] == (
+        "https://mint.example.tee.enclava.dev/.well-known/confidential/status"
+    )
+
+
+def test_attestation_info_alias_points_to_proof_document(monkeypatch):
+    monkeypatch.setenv("ENCLAVA_TEE_BASE_URL", "https://tee.example.test")
+    client = TestClient(app_module.app)
+
+    response = client.get(
+        "/v1/attestation/info",
+        headers={"host": "mint.example.test", "x-forwarded-proto": "https"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["attestation_available"] is True
+    assert body["attestation_type"] == "enclava-cap-sev-snp"
+    assert body["proof_url"] == "https://mint.example.test/.well-known/enclava/proof"
+    assert body["tee_status_url"] == (
+        "https://tee.example.test/.well-known/confidential/status"
+    )
+
+
 def _dummy_keyset(keyset_id: str, active: bool = True):
     return SimpleNamespace(
         id=keyset_id,
