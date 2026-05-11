@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-: "${NUTSHELL_CAP_CONFIG_DIRS:=/state/.enclava/config /data/.enclava/config}"
+: "${NUTSHELL_CAP_CONFIG_DIRS:=/run/enclava/config /state/.enclava/config /data/.enclava/config}"
 if [ -z "${NUTSHELL_CAP_CONFIG_WAIT_SECONDS+x}" ]; then
     if [ -n "${ENCLAVA_CONTAINER_NAME:-}" ]; then
         NUTSHELL_CAP_CONFIG_WAIT_SECONDS=300
