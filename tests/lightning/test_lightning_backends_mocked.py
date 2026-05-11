@@ -22,6 +22,12 @@ from cashu.lightning.lndrest import LndRestWallet
 from cashu.lightning.strike import StrikeWallet
 
 
+def test_spark_wallet_backend_is_exported():
+    from cashu.lightning import SparkWallet
+
+    assert SparkWallet.__name__ == "SparkWallet"
+
+
 def _response(status_code: int, json_data=None, text: str = "") -> httpx.Response:
     request = httpx.Request("POST", "https://backend.test")
     if json_data is not None:
