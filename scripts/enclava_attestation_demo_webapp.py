@@ -25,8 +25,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import verify_enclava_nutshell as verifier
-
+import verify_enclava_nutshell as verifier  # noqa: E402
 
 DEFAULT_MINT_URL = "https://tuscany.e9cae29e.enclava.dev"
 DEFAULT_MANIFEST_URL = (

@@ -3,7 +3,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ENTRYPOINT = Path(__file__).parents[2] / "docker" / "app-entrypoint.sh"
 
 
